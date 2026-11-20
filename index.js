@@ -60,7 +60,6 @@ app.get("/get-single-service/:id", async (req, res) => {
 app.patch("/update-status/:id", async (req, res) => {
   const id = req.params.id;
   const status = req.body;
-  console.log(status);
   const query = { _id: new ObjectId(id) };
 
   const result = await bookings.updateOne(query, {
@@ -107,7 +106,6 @@ app.post("/add-booking", async (req, res) => {
 
 app.post("/add-service", async (req, res) => {
   const data = req.body;
-  console.log(data);
   const result = await services.insertOne(data);
   res.status(200).send({
     status: 200,
@@ -173,6 +171,23 @@ app.get('/get-booking-req/:email',async (req,res ) => {
   });
 }
 )
+
+app.patch("/update-status-by-technician/:id", async (req, res) => {
+  const id = req.params.id;
+  const status = req.body;
+  const query = { _id: new ObjectId(id) };
+
+  const result = await bookings.updateOne(query, {
+    $set: status,
+  });
+
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully update booking  status",
+    result,
+  });
+});
 
 // customer api here
 
