@@ -57,6 +57,24 @@ app.get("/get-single-service/:id", async (req, res) => {
   });
 });
 
+app.patch("/update-status/:id", async (req, res) => {
+  const id = req.params.id;
+  const status = req.body;
+  console.log(status);
+  const query = { _id: new ObjectId(id) };
+
+  const result = await bookings.updateOne(query, {
+    $set: status,
+  });
+
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully update booking  status",
+    result,
+  });
+});
+
 // add booking api
 
 app.post("/add-booking", async (req, res) => {
@@ -91,14 +109,12 @@ app.post("/add-service", async (req, res) => {
   const data = req.body;
   console.log(data);
   const result = await services.insertOne(data);
-  res
-    .status(200)
-    .send({
-      status: 200,
-      success: true,
-      message: "successfully post data",
-      result,
-    });
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully post data",
+    result,
+  });
 });
 
 app.get("/get-services/:email", async (req, res) => {
@@ -106,14 +122,12 @@ app.get("/get-services/:email", async (req, res) => {
   const query = { technicianEmail: email };
   const result = await services.find(query).toArray();
 
-  res
-    .status(200)
-    .send({
-      status: 200,
-      success: true,
-      message: "successfully data retrive",
-      result,
-    });
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully data retrive",
+    result,
+  });
 });
 
 app.delete("/delete-service/:id", async (req, res) => {
@@ -121,14 +135,12 @@ app.delete("/delete-service/:id", async (req, res) => {
   const query = { _id: new ObjectId(id) };
   const result = await services.deleteOne(query);
 
-  res
-    .status(200)
-    .send({
-      status: 200,
-      success: true,
-      message: "successfully delete sercive",
-      result,
-    });
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully delete sercive",
+    result,
+  });
 });
 
 app.patch("/update-service/:id", async (req, res) => {
@@ -139,14 +151,43 @@ app.patch("/update-service/:id", async (req, res) => {
     $set: data,
   });
 
-  res
-    .status(200)
-    .send({
-      status: 200,
-      success: true,
-      message: "successfully update service",
-      result,
-    });
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully update service",
+    result,
+  });
+});
+
+app.get('/get-booking-req/:email',async (req,res ) => {
+  const email = req.params.email
+  const query = {technicianEmail:email}
+  
+  const result = await bookings.find(query).toArray()
+
+   res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully update service",
+    result,
+  });
+}
+)
+
+// customer api here
+
+app.get("/get-bookings/:email", async (req, res) => {
+  const email = req.params.email;
+  const query = { customerEmail: email };
+
+  const result = await bookings.find(query).toArray();
+
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully update service",
+    result,
+  });
 });
 
 app.listen(PORT, () => {
