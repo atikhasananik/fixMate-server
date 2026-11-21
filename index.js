@@ -56,7 +56,11 @@ const firstQueryValue = (value) => {
 };
 
 app.get("/get-all-services", async (req, res) => {
-  const query = {};
+  const query = {
+    approvalStatus: {
+      $nin: ["pending", "rejected"],
+    },
+  };
 
   const search = firstQueryValue(req.query.search).trim();
   const category = firstQueryValue(req.query.category);
