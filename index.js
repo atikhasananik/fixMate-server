@@ -322,6 +322,93 @@ app.get("/get-all-users", async (req, res) => {
   });
 });
 
+// Roles an admin may assign. Keep in sync with ROLE_OPTIONS in
+// src/components/dashboard/admin/admin-users.tsx.
+const USER_ROLES = ["customer", "technician", "admin"];
+
+// This account's role is fixed. The check runs before any database lookup, so
+// every requested role is rejected for it.
+const PROTECTED_ADMIN_EMAIL = "admin@fixmate.com";
+
+// The Next server calls this route with a server-only key, so browsers cannot
+// reach it directly. Fail closed when the key is not configured.
+const requireAdminApiKey = (req, res, next) => {
+  const expected = process.env.ADMIN_API_KEY;
+  const provided = req.get("x-admin-api-key") ?? "";
+
+  if (!expected || provided !== expected) {
+    return res.status(401).send({
+      status: 401,
+      success: false,
+      message: "Unauthorized.",
+    });
+  }
+
+  next();
+};
+
+app.patch("/update-role-by-admin", requireAdminApiKey, async (req, res) => {
+  const email =
+    typeof req.body?.email === "string"
+      ? req.body.email.trim().toLowerCase()
+      : "";
+  const role = req.body?.role;
+
+  if (!email) {
+    return res.status(400).send({
+      status: 400,
+      success: false,
+      message: "A user email is required.",
+    });
+  }
+
+  if (!USER_ROLES.includes(role)) {
+    return res.status(400).send({
+      status: 400,
+      success: false,
+      message: "Invalid role.",
+    });
+  }
+
+  if (email === PROTECTED_ADMIN_EMAIL) {
+    return res.status(403).send({
+      status: 403,
+      success: false,
+      message: "This account's role cannot be changed.",
+    });
+  }
+
+  try {
+    // Only `role` is written; extra body fields are ignored.
+    const result = await user.updateOne({ email }, { $set: { role } });
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        status: 404,
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully update user role",
+      result: {
+        matchedCount: result.matchedCount,
+        modifiedCount: result.modifiedCount,
+      },
+    });
+  } catch (error) {
+    res.status(500).send({
+      status: 500,
+      success: false,
+      message: "failed to update user role",
+      error: error.message,
+    });
+  }
+});
+
 // Approval statuses the admin page can filter by. Unknown values are ignored
 // so the listing falls back to every service.
 const ADMIN_APPROVAL_STATUSES = ["pending", "approved", "rejected"];
