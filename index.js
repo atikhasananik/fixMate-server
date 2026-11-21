@@ -32,15 +32,79 @@ app.get("/", (req, res) => {
   res.send({ message: "server is running...!" });
 });
 
+// UI mode value -> the label stored on the service document.
+const SERVICE_MODE_LABEL = {
+  "home-visit": "Home Visit",
+  "shop-drop-off": "Shop Drop-off",
+};
+
+// Whitelisted sorts; unknown values fall back to newest.
+const SERVICE_SORTS = {
+  newest: { createdAt: -1 },
+  oldest: { createdAt: 1 },
+  "price-asc": { basePrice: 1 },
+  "price-desc": { basePrice: -1 },
+  "title-asc": { title: 1 },
+};
+
+const firstQueryValue = (value) => {
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+
+  return typeof value === "string" ? value : "";
+};
+
 app.get("/get-all-services", async (req, res) => {
   const query = {};
-  const result = await services.find(query).toArray();
 
-  res.status(200).send({
-    status: 200,
-    message: "successfully retrive all services",
-    result,
-  });
+  const search = firstQueryValue(req.query.search).trim();
+  const category = firstQueryValue(req.query.category);
+  const mode = firstQueryValue(req.query.mode);
+  const sort = firstQueryValue(req.query.sort);
+
+  if (category) {
+    query.category = category;
+  }
+
+  if (SERVICE_MODE_LABEL[mode]) {
+    query.serviceMode = SERVICE_MODE_LABEL[mode];
+  }
+
+
+
+  if (search) {
+    // Escape user input so it is matched literally instead of as a regex.
+    const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Case-insensitive match across every field customers search by.
+    const pattern = new RegExp(escaped, "i");
+
+    query.$or = [
+      { title: pattern },
+      { description: pattern },
+      { serviceArea: pattern },
+      { category: pattern },
+    ];
+  }
+
+  try {
+    const result = await services
+      .find(query)
+      .sort(SERVICE_SORTS[sort] || SERVICE_SORTS.newest)
+      .toArray();
+
+    res.status(200).send({
+      status: 200,
+      message: "successfully retrive all services",
+      result,
+    });
+  } catch (error) {
+    res.status(500).send({
+      status: 500,
+      message: "failed to retrive all services",
+      error: error.message,
+    });
+  }
 });
 
 app.get("/get-single-service/:id", async (req, res) => {
