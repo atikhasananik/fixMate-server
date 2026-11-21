@@ -224,14 +224,25 @@ app.patch("/update-service/:id", async (req, res) => {
   });
 });
 
+app.patch("/update-service-isavailable/:id", async (req, res) => {
+  const id = req.params.id;
+  const data = req.body;
+  const query = { _id: new ObjectId(id) };
+  const result = await services.updateOne(query, {
+    $set: data,
+  });
+
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully update service",
+    result,
+  });
+});
+
 // Statuses exposed by the technician filter. Keep in sync with FILTER_OPTIONS
 // in src/components/dashboard/technician/booking-management.tsx.
-const BOOKING_STATUSES = [
-  "requested",
-  "accepted",
-  "in-progress",
-  "completed",
-];
+const BOOKING_STATUSES = ["requested", "accepted", "in-progress", "completed"];
 
 app.get("/get-booking-req/:email", async (req, res) => {
   const email = req.params.email;
@@ -287,6 +298,22 @@ app.get("/get-bookings/:email", async (req, res) => {
   const query = { customerEmail: email };
 
   const result = await bookings.find(query).toArray();
+
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully update service",
+    result,
+  });
+});
+
+// admin api here
+
+app.get("/get-all-users", async (req, res) => {
+  
+  const queryData = req.query;
+  const query = {};
+  const result = await user.find(query).toArray();
 
   res.status(200).send({
     status: 200,
