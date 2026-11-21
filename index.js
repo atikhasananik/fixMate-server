@@ -310,7 +310,6 @@ app.get("/get-bookings/:email", async (req, res) => {
 // admin api here
 
 app.get("/get-all-users", async (req, res) => {
-
   const queryData = req.query;
   const query = {};
   const result = await user.find(query).toArray();
@@ -322,7 +321,6 @@ app.get("/get-all-users", async (req, res) => {
     result,
   });
 });
-
 
 // Approval statuses the admin page can filter by. Unknown values are ignored
 // so the listing falls back to every service.
@@ -391,6 +389,76 @@ app.get("/get-all-services-by-admin", async (req, res) => {
   }
 });
 
+// Booking statuses the admin listing can filter by. Unknown values are ignored.
+const ADMIN_BOOKING_STATUSES = [
+  "requested",
+  "accepted",
+  "in-progress",
+  "completed",
+  "rejected",
+  "cancelled",
+];
+
+// Whitelisted admin sorts; unknown values fall back to newest first.
+const ADMIN_BOOKING_SORTS = {
+  newest: { createdAt: -1 },
+  oldest: { createdAt: 1 },
+  "date-asc": { preferredDate: 1 },
+  "date-desc": { preferredDate: -1 },
+  "amount-asc": { basePrice: 1 },
+  "amount-desc": { basePrice: -1 },
+};
+
+app.get("/get-bookings-by-admin", async (req, res) => {
+  const query = {};
+
+  const status = firstQueryValue(req.query.status);
+
+  if (ADMIN_BOOKING_STATUSES.includes(status)) {
+    query.status = status;
+  }
+
+  const search = firstQueryValue(req.query.search).trim();
+
+  if (search) {
+    // Escape user input so it is matched literally instead of as a regex.
+    const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(escaped, "i");
+
+    query.$or = [
+      { serviceTitle: pattern },
+      { customerName: pattern },
+      { customerEmail: pattern },
+      { technicianName: pattern },
+      { technicianEmail: pattern },
+      { phone: pattern },
+      { address: pattern },
+    ];
+  }
+
+  const sort = firstQueryValue(req.query.sort);
+
+  try {
+    const result = await bookings
+      .find(query)
+      .sort(ADMIN_BOOKING_SORTS[sort] || ADMIN_BOOKING_SORTS.newest)
+      .toArray();
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully retrive bookings",
+      result,
+    });
+  } catch (error) {
+    res.status(500).send({
+      status: 500,
+      success: false,
+      message: "failed to retrive bookings",
+      error: error.message,
+    });
+  }
+});
 
 app.listen(PORT, () => {
   console.log("server is working fine...");
