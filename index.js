@@ -551,6 +551,12 @@ app.get("/get-bookings-by-admin", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log("server is working fine...");
-});
+export default app;
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log("server is working fine...");
+  });
+}
+
+
