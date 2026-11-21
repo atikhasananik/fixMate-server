@@ -224,18 +224,43 @@ app.patch("/update-service/:id", async (req, res) => {
   });
 });
 
+// Statuses exposed by the technician filter. Keep in sync with FILTER_OPTIONS
+// in src/components/dashboard/technician/booking-management.tsx.
+const BOOKING_STATUSES = [
+  "requested",
+  "accepted",
+  "in-progress",
+  "completed",
+];
+
 app.get("/get-booking-req/:email", async (req, res) => {
   const email = req.params.email;
   const query = { technicianEmail: email };
 
-  const result = await bookings.find(query).toArray();
+  // Unknown statuses are ignored so the listing falls back to "all".
+  const status = firstQueryValue(req.query.status);
 
-  res.status(200).send({
-    status: 200,
-    success: true,
-    message: "successfully update service",
-    result,
-  });
+  if (BOOKING_STATUSES.includes(status)) {
+    query.status = status;
+  }
+
+  try {
+    const result = await bookings.find(query).toArray();
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully retrive booking requests",
+      result,
+    });
+  } catch (error) {
+    res.status(500).send({
+      status: 500,
+      success: false,
+      message: "failed to retrive booking requests",
+      error: error.message,
+    });
+  }
 });
 
 app.patch("/update-status-by-technician/:id", async (req, res) => {
