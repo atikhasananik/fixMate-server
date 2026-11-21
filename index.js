@@ -71,8 +71,6 @@ app.get("/get-all-services", async (req, res) => {
     query.serviceMode = SERVICE_MODE_LABEL[mode];
   }
 
-
-
   if (search) {
     // Escape user input so it is matched literally instead of as a regex.
     const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -143,7 +141,12 @@ app.patch("/update-status/:id", async (req, res) => {
 app.post("/add-booking", async (req, res) => {
   const payload = req.body;
   const { customerEmail, technicianEmail, serviceId } = payload;
-  const query = { customerEmail, technicianEmail, serviceId };
+  const query = {
+    customerEmail,
+    technicianEmail,
+    serviceId,
+    status: { $ne: "cancelled" },
+  };
   const exist = await bookings.countDocuments(query);
   if (exist === 0) {
     const result = await bookings.insertOne(payload);
@@ -221,20 +224,19 @@ app.patch("/update-service/:id", async (req, res) => {
   });
 });
 
-app.get('/get-booking-req/:email',async (req,res ) => {
-  const email = req.params.email
-  const query = {technicianEmail:email}
-  
-  const result = await bookings.find(query).toArray()
+app.get("/get-booking-req/:email", async (req, res) => {
+  const email = req.params.email;
+  const query = { technicianEmail: email };
 
-   res.status(200).send({
+  const result = await bookings.find(query).toArray();
+
+  res.status(200).send({
     status: 200,
     success: true,
     message: "successfully update service",
     result,
   });
-}
-)
+});
 
 app.patch("/update-status-by-technician/:id", async (req, res) => {
   const id = req.params.id;
