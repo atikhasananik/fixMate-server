@@ -310,7 +310,7 @@ app.get("/get-bookings/:email", async (req, res) => {
 // admin api here
 
 app.get("/get-all-users", async (req, res) => {
-  
+
   const queryData = req.query;
   const query = {};
   const result = await user.find(query).toArray();
@@ -322,6 +322,75 @@ app.get("/get-all-users", async (req, res) => {
     result,
   });
 });
+
+
+// Approval statuses the admin page can filter by. Unknown values are ignored
+// so the listing falls back to every service.
+const ADMIN_APPROVAL_STATUSES = ["pending", "approved", "rejected"];
+
+// Review order: pending first, then rejected, then approved.
+const ADMIN_APPROVAL_PRIORITY = {
+  pending: 0,
+  rejected: 1,
+  approved: 2,
+};
+
+app.get("/get-all-services-by-admin", async (req, res) => {
+  const query = {};
+
+  // Validated filters combine with AND; the admin page currently exposes
+  // approval status, and additional filters can be added here.
+  const approvalStatus = firstQueryValue(req.query.approvalStatus);
+
+  if (ADMIN_APPROVAL_STATUSES.includes(approvalStatus)) {
+    query.approvalStatus = approvalStatus;
+  }
+
+  try {
+    // Sorting lives on the server too: pending listings are reviewed first.
+    const result = await services
+      .aggregate([
+        { $match: query },
+        {
+          $addFields: {
+            approvalPriority: {
+              $switch: {
+                branches: [
+                  {
+                    case: { $eq: ["$approvalStatus", "pending"] },
+                    then: ADMIN_APPROVAL_PRIORITY.pending,
+                  },
+                  {
+                    case: { $eq: ["$approvalStatus", "rejected"] },
+                    then: ADMIN_APPROVAL_PRIORITY.rejected,
+                  },
+                ],
+                default: ADMIN_APPROVAL_PRIORITY.approved,
+              },
+            },
+          },
+        },
+        { $sort: { approvalPriority: 1, createdAt: -1 } },
+        { $project: { approvalPriority: 0 } },
+      ])
+      .toArray();
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully retrive services",
+      result,
+    });
+  } catch (error) {
+    res.status(500).send({
+      status: 500,
+      success: false,
+      message: "failed to retrive services",
+      error: error.message,
+    });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log("server is working fine...");
