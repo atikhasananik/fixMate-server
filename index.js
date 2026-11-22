@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import "dotenv/config";
 import { MongoClient, ObjectId } from "mongodb";
+import Stripe from "stripe";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -24,6 +25,70 @@ const services = db.collection("services");
 const bookings = db.collection("bookings");
 const payments = db.collection("payments");
 const user = db.collection("user");
+
+// here is the Stripe functionality
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+app.post("/create-payment-intent", async (req, res) => {
+  const payload = req.body;
+
+  // check if booking is exist in our database or not
+
+  //
+  //
+
+  const bookingService = await bookings.findOne({
+    _id: new ObjectId(payload.bookingId),
+  });
+  if (!bookingService) {
+    return res.status(404).send({
+      status: 404,
+      success: false,
+      message: "Booking not found",
+    });
+    return;
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    success_url: `${process.env.CLIENT_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.CLIENT_URL}/checkout/cancel`,
+
+    metadata: {
+      bookingId: payload.bookingId,
+      customerEmail: bookingService.customerEmail,
+      technicianEmail: bookingService.technicianEmail,
+    },
+
+    line_items: [
+      {
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: bookingService.serviceTitle,
+            images: [bookingService.serviceImage],
+          },
+          unit_amount:
+            bookingService.finalAmount > bookingService.basePrice
+              ? bookingService.finalAmount * 100
+              : bookingService.basePrice * 100,
+        },
+        quantity: 1,
+      },
+    ],
+    mode: "payment",
+  });
+
+  console.log("session",session);
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully create payment intent",
+    result: session,
+  });
+});
+
+
 
 app.use(cors());
 app.use(express.json());
@@ -638,5 +703,3 @@ if (!process.env.VERCEL) {
     console.log("server is working fine...");
   });
 }
-
-
