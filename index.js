@@ -353,6 +353,44 @@ app.get("/get-bookings/:email", async (req, res) => {
   });
 });
 
+app.get("/get-booking-by-id/:id", async (req, res) => {
+  const id = req.params.id;
+
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({
+      status: 400,
+      success: false,
+      message: "invalid booking id",
+    });
+  }
+
+  try {
+    const result = await bookings.findOne({ _id: new ObjectId(id) });
+
+    if (!result) {
+      return res.status(404).send({
+        status: 404,
+        success: false,
+        message: "booking not found",
+      });
+    }
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully retrive single booking",
+      result,
+    });
+  } catch (error) {
+    res.status(500).send({
+      status: 500,
+      success: false,
+      message: "failed to retrive single booking",
+      error: error.message,
+    });
+  }
+});
+
 // admin api here
 
 app.get("/get-all-users", async (req, res) => {
