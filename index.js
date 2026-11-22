@@ -54,7 +54,7 @@ app.post(
       return res.status(400).send({ received: false });
     }
 
-    console.log("Stripe webhook received:", event.type, event.id);
+    console.log("Stripe webhook received:", event);
 
     if (event.type === "payment_intent.succeeded") {
       console.log("Payment succeeded:", event.data.object);
