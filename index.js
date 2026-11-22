@@ -123,6 +123,48 @@ app.get("/get-single-service/:id", async (req, res) => {
   });
 });
 
+// Only the fields the homepage cards render. `_id` stays included so the
+// frontend can link to /services/:id; technicianEmail is never exposed.
+const FEATURED_SERVICE_FIELDS = {
+  title: 1,
+  category: 1,
+  description: 1,
+  image: 1,
+  basePrice: 1,
+  estimatedDuration: 1,
+  serviceMode: 1,
+  serviceArea: 1,
+  technicianName: 1,
+  approvalStatus: 1,
+  isAvailable: 1,
+  createdAt: 1,
+};
+
+app.get("/get-featured-services", async (req, res) => {
+  try {
+    const result = await services
+      .find({ approvalStatus: "approved", isAvailable: true })
+      .project(FEATURED_SERVICE_FIELDS)
+      .sort({ createdAt: -1 })
+      .limit(6)
+      .toArray();
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully retrive featured services",
+      result,
+    });
+  } catch (error) {
+    res.status(500).send({
+      status: 500,
+      success: false,
+      message: "failed to retrive featured services",
+      error: error.message,
+    });
+  }
+});
+
 app.patch("/update-status/:id", async (req, res) => {
   const id = req.params.id;
   const status = req.body;
