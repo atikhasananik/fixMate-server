@@ -7,8 +7,14 @@ import Stripe from "stripe";
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
 app.use(cors());
-app.use(express.json());
+
 
 const client = new MongoClient(process.env.MONGODB_URI);
 
@@ -32,6 +38,36 @@ const user = db.collection("user");
 // here is the Stripe functionality
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+app.post(
+  "/api/webhooks/stripe",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, secret);
+    } catch (err) {
+      console.error("Webhook signature verification failed:", err.message);
+      return res.status(400).send({ received: false });
+    }
+
+    console.log("Stripe webhook received:", event.type, event.id);
+
+    if (event.type === "payment_intent.succeeded") {
+      console.log("Payment succeeded:", event.data.object);
+    } else if (event.type === "payment_intent.payment_failed") {
+      console.log("Payment failed:", event.data.object);
+    }
+
+    res.status(200).send({ received: true });
+  },
+);
+
+
+app.use(express.json());
 
 app.post("/create-payment-intent", async (req, res) => {
   const id = req.body.bookingId;
@@ -79,17 +115,17 @@ app.post("/create-payment-intent", async (req, res) => {
     mode: "payment",
   });
 
-  console.log("session", session);
+  // console.log("session", session);
   res.status(200).send({
     status: 200,
     success: true,
     message: "successfully create payment intent",
-    result: session,
+    result: {
+      sessionId: session.id,
+      url: session.url,
+    },
   });
 });
-
-app.use(cors());
-app.use(express.json());
 
 app.get("/", (req, res) => {
   res.send({ message: "server is running...!" });
