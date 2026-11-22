@@ -15,7 +15,6 @@ export const config = {
 
 app.use(cors());
 
-
 const client = new MongoClient(process.env.MONGODB_URI);
 
 export async function connectToMongoDB() {
@@ -42,7 +41,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 app.post(
   "/api/webhooks/stripe",
   express.raw({ type: "application/json" }),
-  (req, res) => {
+  async (req, res) => {
     const sig = req.headers["stripe-signature"];
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -54,10 +53,47 @@ app.post(
       return res.status(400).send({ received: false });
     }
 
-    console.log("Stripe webhook received:", event);
+    // console.log("Stripe webhook received:", event);
 
-    if (event.type === "payment_intent.succeeded") {
-      console.log("Payment succeeded:", event.data.object);
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+
+      await bookings.updateOne(
+        { _id: new ObjectId(session.metadata?.bookingId) },
+        {
+          $set: {
+            paymentStatus: "paid",
+          },
+        },
+      );  // update the payment status 
+
+      const getBooking = await bookings.findOne({
+        _id: new ObjectId(session.metadata.bookingId),
+      });
+     
+
+      const paymentPayload = {
+        bookingId: session.metadata.bookingId,
+
+        customerName: session.customer_details?.name ?? getBooking.customerName,
+        customerEmail:
+          session.customer_details?.email ?? getBooking.customerEmail,
+
+        technicianEmail:
+          session.metadata.technicianEmail ?? getBooking.technicianEmail,
+
+        amount: session.amount_total / 100,
+        currency: session.currency,
+
+        transactionId: session.payment_intent,
+        stripeSessionId: session.id,
+
+        paymentStatus: session.payment_status,
+        paidAt: new Date(event.created * 1000),
+      };
+
+      await payments.insertOne(paymentPayload);  //add payment data 
+
     } else if (event.type === "payment_intent.payment_failed") {
       console.log("Payment failed:", event.data.object);
     }
@@ -65,7 +101,6 @@ app.post(
     res.status(200).send({ received: true });
   },
 );
-
 
 app.use(express.json());
 
