@@ -7,6 +7,9 @@ import Stripe from "stripe";
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+app.use(cors());
+app.use(express.json());
+
 const client = new MongoClient(process.env.MONGODB_URI);
 
 export async function connectToMongoDB() {
@@ -31,15 +34,12 @@ const user = db.collection("user");
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.post("/create-payment-intent", async (req, res) => {
-  const payload = req.body;
+  const id = req.body.bookingId;
 
   // check if booking is exist in our database or not
 
-  //
-  //
-
   const bookingService = await bookings.findOne({
-    _id: new ObjectId(payload.bookingId),
+    _id: new ObjectId(id),
   });
   if (!bookingService) {
     return res.status(404).send({
@@ -55,7 +55,7 @@ app.post("/create-payment-intent", async (req, res) => {
     cancel_url: `${process.env.CLIENT_URL}/checkout/cancel`,
 
     metadata: {
-      bookingId: payload.bookingId,
+      bookingId: id,
       customerEmail: bookingService.customerEmail,
       technicianEmail: bookingService.technicianEmail,
     },
@@ -79,7 +79,7 @@ app.post("/create-payment-intent", async (req, res) => {
     mode: "payment",
   });
 
-  console.log("session",session);
+  console.log("session", session);
   res.status(200).send({
     status: 200,
     success: true,
@@ -87,8 +87,6 @@ app.post("/create-payment-intent", async (req, res) => {
     result: session,
   });
 });
-
-
 
 app.use(cors());
 app.use(express.json());
