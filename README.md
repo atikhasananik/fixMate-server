@@ -4,6 +4,12 @@ Backend REST API server for the **FixMate** on-demand appliance & electronics re
 
 ---
 
+## Live API
+
+**Backend:** [FixMate Backend](https://fixmate-server-tau.vercel.app/)
+
+---
+
 ## 🚀 Tech Stack
 
 - **Runtime**: [Node.js](https://nodejs.org/) (ES Modules)
