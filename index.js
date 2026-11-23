@@ -787,6 +787,21 @@ app.get("/get-payment/:customerEmail", async (req, res) => {
   });
 });
 
+// technician email api
+
+app.get("/get-payments", async (req, res) => {
+  const query = {};
+
+  const result = await payments.find(query).toArray();
+
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully retrive payments",
+    result,
+  });
+});
+
 export default app;
 
 if (!process.env.VERCEL) {
