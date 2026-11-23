@@ -3,6 +3,7 @@ import cors from "cors";
 import "dotenv/config";
 import { MongoClient, ObjectId } from "mongodb";
 import Stripe from "stripe";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -106,6 +107,79 @@ app.post(
 
 app.use(express.json());
 
+// jwt token verify here
+
+const verifyJwtToken = async (req, res, next) => {
+  const jwtToken = req.headers.authorization;
+  if (!jwtToken) {
+    // throw new Error
+    return;
+  }
+  const token = jwtToken.split(" ")[1];
+  console.log(token);
+
+  if (!token) {
+    //throw new Error
+    return;
+  }
+
+  try {
+    const JWKS = createRemoteJWKSet(
+      new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
+    );
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: process.env.CLIENT_URL, // Should match your JWT issuer, which is the BASE_URL
+      audience: process.env.CLIENT_URL, // Should match your JWT audience, which is the BASE_URL by default
+    });
+     
+    req.user = {...payload}
+    next();
+    
+
+  } catch (error) {
+    console.error("Token validation failed:", error);
+    throw error;
+  }
+
+};
+
+
+const verifyAdmin = (req, res, next) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).send({
+      status: 403,
+      message: "Access denied. Admin permission required.",
+    });
+  }
+
+  next();
+};
+
+const verifyTechnician = (req, res, next) => {
+  if (req.user?.role !== "technician") {
+    return res.status(403).send({
+      status: 403,
+      message: "Access denied. Technician permission required.",
+    });
+  }
+
+  next();
+};
+
+const verifyCustomer = (req, res, next) => {
+  if (req.user?.role !== "customer") {
+    return res.status(403).send({
+      status: 403,
+      message: "Access denied. Customer permission required.",
+    });
+  }
+
+  next();
+};
+
+
+
+
 app.post("/create-payment-intent", async (req, res) => {
   const id = req.body.bookingId;
 
@@ -193,7 +267,7 @@ const firstQueryValue = (value) => {
   return typeof value === "string" ? value : "";
 };
 
-app.get("/get-all-services", async (req, res) => {
+app.get("/get-all-services",  async (req, res) => {
   const query = {
     approvalStatus: {
       $nin: ["pending", "rejected"],
