@@ -66,10 +66,10 @@ app.post(
       customerName: session.customer_details?.name ?? getBooking.customerName,
       customerEmail:
         session.customer_details?.email ?? getBooking.customerEmail,
-
       technicianEmail:
         session.metadata.technicianEmail ?? getBooking.technicianEmail,
-
+      technicianName: getBooking.technicianName,
+      serviceTitle: getBooking.serviceTitle,
       amount: session.amount_total / 100,
       currency: session.currency,
 
@@ -770,26 +770,22 @@ app.get("/get-bookings-by-admin", async (req, res) => {
   }
 });
 
+// customer api here
 
+app.get("/get-payment/:customerEmail", async (req, res) => {
+  const email = req.params.customerEmail;
 
+  const query = { customerEmail: email };
 
-// customer api here 
+  const result = await payments.find(query).toArray();
 
-app.get('/get-payment/:customerEmail', async (req,res ) => {
-  const email = req.params.customerEmail
-
-  const query = {customerEmail:email}
-
-  result = await payments.find(query).toArray();
-
-   res.status(200).send({
-      status: 200,
-      success: true,
-      message: "successfully retrive bookings",
-      result,
-    });
-}
-)
+  res.status(200).send({
+    status: 200,
+    success: true,
+    message: "successfully retrive payments",
+    result,
+  });
+});
 
 export default app;
 
