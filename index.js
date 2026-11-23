@@ -91,6 +91,8 @@ app.post(
         paidAt: new Date(event.created * 1000),
       };
 
+      console.log(paymentPayload);
+
       await payments.insertOne(paymentPayload); //add payment data
     } else if (event.type === "payment_intent.payment_failed") {
       console.log("Payment failed:", event.data.object);
@@ -146,6 +148,8 @@ app.post("/create-payment-intent", async (req, res) => {
       },
     ],
     mode: "payment",
+    customer_email:bookingService.customerEmail,
+    customerName:bookingService.customerName
   });
 
   // console.log("session", session);
@@ -207,7 +211,6 @@ app.get("/get-all-services", async (req, res) => {
   if (SERVICE_MODE_LABEL[mode]) {
     query.serviceMode = SERVICE_MODE_LABEL[mode];
   }
-
 
   if (search) {
     // Escape user input so it is matched literally instead of as a regex.
