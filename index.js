@@ -111,36 +111,43 @@ app.use(express.json());
 
 const verifyJwtToken = async (req, res, next) => {
   const jwtToken = req.headers.authorization;
-  if (!jwtToken) {
-    // throw new Error
-    return;
-  }
-  const token = jwtToken.split(" ")[1];
-  console.log(token);
 
-  if (!token) {
-    //throw new Error
-    return;
+  if (!jwtToken) {
+    return res.status(401).send({
+      status: 401,
+      message: "Unauthorized. Authentication token is required.",
+    });
+  }
+
+  const token = jwtToken.split(" ")[1];
+
+  if (!token || !jwtToken.startsWith("Bearer ")) {
+    return res.status(401).send({
+      status: 401,
+      message: "Invalid authorization token format.",
+    });
   }
 
   try {
     const JWKS = createRemoteJWKSet(
       new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
     );
+
     const { payload } = await jwtVerify(token, JWKS, {
       issuer: process.env.CLIENT_URL, // Should match your JWT issuer, which is the BASE_URL
       audience: process.env.CLIENT_URL, // Should match your JWT audience, which is the BASE_URL by default
     });
-     
-    req.user = {...payload}
-    next();
-    
 
+    req.user = { ...payload };
+    next();
   } catch (error) {
     console.error("Token validation failed:", error);
-    throw error;
-  }
 
+    return res.status(401).send({
+      status: 401,
+      message: "Invalid or expired authentication token.",
+    });
+  }
 };
 
 
@@ -177,10 +184,24 @@ const verifyCustomer = (req, res, next) => {
   next();
 };
 
+// Case-insensitive comparison for ownership checks against the verified
+// token payload (emails come from the URL/body on one side).
+const sameEmail = (a, b) =>
+  typeof a === "string" &&
+  typeof b === "string" &&
+  a.trim().toLowerCase() === b.trim().toLowerCase();
+
+// Sent when an authenticated user reaches a record they do not own.
+const denyOwnership = (res) =>
+  res.status(403).send({
+    status: 403,
+    message: "Access denied. This record belongs to another account.",
+  });
 
 
 
-app.post("/create-payment-intent", async (req, res) => {
+
+app.post("/create-payment-intent", verifyJwtToken, verifyCustomer, async (req, res) => {
   const id = req.body.bookingId;
 
   // check if booking is exist in our database or not
@@ -195,6 +216,11 @@ app.post("/create-payment-intent", async (req, res) => {
       message: "Booking not found",
     });
     return;
+  }
+
+  // Only the customer the booking belongs to may pay for it.
+  if (!sameEmail(bookingService.customerEmail, req.user?.email)) {
+    return denyOwnership(res);
   }
 
   const session = await stripe.checkout.sessions.create({
@@ -378,27 +404,49 @@ app.get("/get-featured-services", async (req, res) => {
   }
 });
 
-app.patch("/update-status/:id", async (req, res) => {
-  const id = req.params.id;
-  const status = req.body;
-  const query = { _id: new ObjectId(id) };
+app.patch(
+  "/update-status/:id",
+  verifyJwtToken,
+  verifyCustomer,
+  async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
 
-  const result = await bookings.updateOne(query, {
-    $set: status,
-  });
+    // Ownership: only the customer the booking belongs to may change it.
+    const booking = await bookings.findOne(query);
+    if (booking && !sameEmail(booking.customerEmail, req.user?.email)) {
+      return denyOwnership(res);
+    }
 
-  res.status(200).send({
-    status: 200,
-    success: true,
-    message: "successfully update booking  status",
-    result,
-  });
-});
+    // Customers may only cancel — no other booking field is writable here.
+    const status = req.body?.status;
+    if (status !== "cancelled") {
+      return res.status(400).send({
+        status: 400,
+        success: false,
+        message: "Invalid booking status.",
+      });
+    }
+
+    const result = await bookings.updateOne(query, {
+      $set: { status },
+    });
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully update booking  status",
+      result,
+    });
+  },
+);
 
 // add booking api
 
-app.post("/add-booking", async (req, res) => {
+app.post("/add-booking", verifyJwtToken, verifyCustomer, async (req, res) => {
   const payload = req.body;
+  // The verified token decides who the booking belongs to.
+  payload.customerEmail = req.user?.email;
   const { customerEmail, technicianEmail, serviceId } = payload;
   const query = {
     customerEmail,
@@ -430,47 +478,97 @@ app.post("/add-booking", async (req, res) => {
 
 // technician api here ->
 
-app.post("/add-service", async (req, res) => {
-  const data = req.body;
-  const result = await services.insertOne(data);
-  res.status(200).send({
-    status: 200,
-    success: true,
-    message: "successfully post data",
-    result,
-  });
-});
+app.post(
+  "/add-service",
+  verifyJwtToken,
+  verifyTechnician,
+  async (req, res) => {
+    const data = req.body;
+    // The verified token decides which technician owns the listing.
+    data.technicianEmail = req.user?.email;
+    // Only admins approve listings; technicians always submit as pending.
+    data.approvalStatus = "pending";
+    const result = await services.insertOne(data);
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully post data",
+      result,
+    });
+  },
+);
 
-app.get("/get-services/:email", async (req, res) => {
-  const email = req.params.email;
-  const query = { technicianEmail: email };
-  const result = await services.find(query).toArray();
+app.get(
+  "/get-services/:email",
+  verifyJwtToken,
+  verifyTechnician,
+  async (req, res) => {
+    const email = req.params.email;
 
-  res.status(200).send({
-    status: 200,
-    success: true,
-    message: "successfully data retrive",
-    result,
-  });
-});
+    // Technicians only ever see their own listings.
+    if (!sameEmail(email, req.user?.email)) {
+      return denyOwnership(res);
+    }
 
-app.delete("/delete-service/:id", async (req, res) => {
+    const query = { technicianEmail: email };
+    const result = await services.find(query).toArray();
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully data retrive",
+      result,
+    });
+  },
+);
+
+app.delete(
+  "/delete-service/:id",
+  verifyJwtToken,
+  verifyTechnician,
+  async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+
+    // Ownership: a technician may only delete their own listing.
+    const service = await services.findOne(query);
+    if (service && !sameEmail(service.technicianEmail, req.user?.email)) {
+      return denyOwnership(res);
+    }
+
+    const result = await services.deleteOne(query);
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully delete sercive",
+      result,
+    });
+  },
+);
+
+app.patch("/update-service/:id", verifyJwtToken, async (req, res) => {
   const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  const result = await services.deleteOne(query);
-
-  res.status(200).send({
-    status: 200,
-    success: true,
-    message: "successfully delete sercive",
-    result,
-  });
-});
-
-app.patch("/update-service/:id", async (req, res) => {
-  const id = req.params.id;
   const data = req.body;
   const query = { _id: new ObjectId(id) };
+
+  if (req.user?.role === "admin") {
+    // Admin approval/rejection: the body is applied as-is.
+  } else if (req.user?.role === "technician") {
+    // Ownership: technicians may only edit their own listing, and cannot
+    // approve it themselves (the honest UI always submits "pending").
+    const service = await services.findOne(query);
+    if (service && !sameEmail(service.technicianEmail, req.user?.email)) {
+      return denyOwnership(res);
+    }
+    data.approvalStatus = "pending";
+  } else {
+    return res.status(403).send({
+      status: 403,
+      message: "Access denied. Admin or technician permission required.",
+    });
+  }
+
   const result = await services.updateOne(query, {
     $set: data,
   });
@@ -483,28 +581,46 @@ app.patch("/update-service/:id", async (req, res) => {
   });
 });
 
-app.patch("/update-service-isavailable/:id", async (req, res) => {
-  const id = req.params.id;
-  const data = req.body;
-  const query = { _id: new ObjectId(id) };
-  const result = await services.updateOne(query, {
-    $set: data,
-  });
+app.patch(
+  "/update-service-isavailable/:id",
+  verifyJwtToken,
+  verifyTechnician,
+  async (req, res) => {
+    const id = req.params.id;
+    const data = req.body;
+    const query = { _id: new ObjectId(id) };
 
-  res.status(200).send({
-    status: 200,
-    success: true,
-    message: "successfully update service",
-    result,
-  });
-});
+    // Ownership: a technician may only toggle their own listing.
+    const service = await services.findOne(query);
+    if (service && !sameEmail(service.technicianEmail, req.user?.email)) {
+      return denyOwnership(res);
+    }
+
+    const result = await services.updateOne(query, {
+      $set: data,
+    });
+
+    res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully update service",
+      result,
+    });
+  },
+);
 
 // Statuses exposed by the technician filter. Keep in sync with FILTER_OPTIONS
 // in src/components/dashboard/technician/booking-management.tsx.
 const BOOKING_STATUSES = ["requested", "accepted", "in-progress", "completed"];
 
-app.get("/get-booking-req/:email", async (req, res) => {
+app.get("/get-booking-req/:email", verifyJwtToken, verifyTechnician, async (req, res) => {
   const email = req.params.email;
+
+  // Technicians only ever see jobs assigned to them.
+  if (!sameEmail(email, req.user?.email)) {
+    return denyOwnership(res);
+  }
+
   const query = { technicianEmail: email };
 
   // Unknown statuses are ignored so the listing falls back to "all".
@@ -533,13 +649,27 @@ app.get("/get-booking-req/:email", async (req, res) => {
   }
 });
 
-app.patch("/update-status-by-technician/:id", async (req, res) => {
+app.patch("/update-status-by-technician/:id", verifyJwtToken, verifyTechnician, async (req, res) => {
   const id = req.params.id;
-  const status = req.body;
   const query = { _id: new ObjectId(id) };
 
+  // Ownership: only the technician the job is assigned to may update it.
+  const booking = await bookings.findOne(query);
+  if (booking && !sameEmail(booking.technicianEmail, req.user?.email)) {
+    return denyOwnership(res);
+  }
+
+  // Only the status and the technician's final amount are writable here —
+  // never paymentStatus or any identity field.
+  const status = req.body?.status;
+  const finalAmount = req.body?.finalAmount;
+  const update = { status };
+  if (finalAmount !== undefined) {
+    update.finalAmount = finalAmount;
+  }
+
   const result = await bookings.updateOne(query, {
-    $set: status,
+    $set: update,
   });
 
   res.status(200).send({
@@ -552,8 +682,14 @@ app.patch("/update-status-by-technician/:id", async (req, res) => {
 
 // customer api here
 
-app.get("/get-bookings/:email", async (req, res) => {
+app.get("/get-bookings/:email", verifyJwtToken, verifyCustomer, async (req, res) => {
   const email = req.params.email;
+
+  // Customers only ever see their own bookings.
+  if (!sameEmail(email, req.user?.email)) {
+    return denyOwnership(res);
+  }
+
   const query = { customerEmail: email };
 
   const result = await bookings.find(query).toArray();
@@ -566,7 +702,7 @@ app.get("/get-bookings/:email", async (req, res) => {
   });
 });
 
-app.get("/get-booking-by-id/:id", async (req, res) => {
+app.get("/get-booking-by-id/:id", verifyJwtToken, verifyCustomer, async (req, res) => {
   const id = req.params.id;
 
   if (!ObjectId.isValid(id)) {
@@ -588,6 +724,11 @@ app.get("/get-booking-by-id/:id", async (req, res) => {
       });
     }
 
+    // Ownership: only the customer the booking belongs to may view it.
+    if (!sameEmail(result.customerEmail, req.user?.email)) {
+      return denyOwnership(res);
+    }
+
     res.status(200).send({
       status: 200,
       success: true,
@@ -606,7 +747,7 @@ app.get("/get-booking-by-id/:id", async (req, res) => {
 
 // admin api here
 
-app.get("/get-all-users", async (req, res) => {
+app.get("/get-all-users", verifyJwtToken, verifyAdmin, async (req, res) => {
   const queryData = req.query;
   const query = {};
   const result = await user.find(query).toArray();
@@ -627,24 +768,9 @@ const USER_ROLES = ["customer", "technician", "admin"];
 // every requested role is rejected for it.
 const PROTECTED_ADMIN_EMAIL = "admin@fixmate.com";
 
-// The Next server calls this route with a server-only key, so browsers cannot
-// reach it directly. Fail closed when the key is not configured.
-const requireAdminApiKey = (req, res, next) => {
-  const expected = process.env.ADMIN_API_KEY;
-  const provided = req.get("x-admin-api-key") ?? "";
-
-  if (!expected || provided !== expected) {
-    return res.status(401).send({
-      status: 401,
-      success: false,
-      message: "Unauthorized.",
-    });
-  }
-
-  next();
-};
-
-app.patch("/update-role-by-admin", requireAdminApiKey, async (req, res) => {
+// Role changes are made by the signed-in admin through the server action,
+// which sends the Better Auth JWT; the verified payload decides access.
+app.patch("/update-role-by-admin", verifyJwtToken, verifyAdmin, async (req, res) => {
   const email =
     typeof req.body?.email === "string"
       ? req.body.email.trim().toLowerCase()
@@ -717,7 +843,7 @@ const ADMIN_APPROVAL_PRIORITY = {
   approved: 2,
 };
 
-app.get("/get-all-services-by-admin", async (req, res) => {
+app.get("/get-all-services-by-admin", verifyJwtToken, verifyAdmin, async (req, res) => {
   const query = {};
 
   // Validated filters combine with AND; the admin page currently exposes
@@ -793,7 +919,7 @@ const ADMIN_BOOKING_SORTS = {
   "amount-desc": { basePrice: -1 },
 };
 
-app.get("/get-bookings-by-admin", async (req, res) => {
+app.get("/get-bookings-by-admin", verifyJwtToken, verifyAdmin, async (req, res) => {
   const query = {};
 
   const status = firstQueryValue(req.query.status);
@@ -846,8 +972,13 @@ app.get("/get-bookings-by-admin", async (req, res) => {
 
 // customer api here
 
-app.get("/get-payment/:customerEmail", async (req, res) => {
+app.get("/get-payment/:customerEmail", verifyJwtToken, verifyCustomer, async (req, res) => {
   const email = req.params.customerEmail;
+
+  // Customers only ever see their own payment history.
+  if (!sameEmail(email, req.user?.email)) {
+    return denyOwnership(res);
+  }
 
   const query = { customerEmail: email };
 
@@ -863,7 +994,7 @@ app.get("/get-payment/:customerEmail", async (req, res) => {
 
 // technician email api
 
-app.get("/get-payments", async (req, res) => {
+app.get("/get-payments", verifyJwtToken, verifyAdmin, async (req, res) => {
   const query = {};
 
   const result = await payments.find(query).toArray();
