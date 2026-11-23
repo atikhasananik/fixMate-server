@@ -54,46 +54,48 @@ app.post(
     }
 
     // console.log("Stripe webhook received:", event);
+    const session = event.data.object;
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
+    const getBooking = await bookings.findOne({
+      _id: new ObjectId(session.metadata.bookingId),
+    });
 
+    const paymentPayload = {
+      bookingId: session.metadata.bookingId,
+
+      customerName: session.customer_details?.name ?? getBooking.customerName,
+      customerEmail:
+        session.customer_details?.email ?? getBooking.customerEmail,
+
+      technicianEmail:
+        session.metadata.technicianEmail ?? getBooking.technicianEmail,
+
+      amount: session.amount_total / 100,
+      currency: session.currency,
+
+      transactionId: session.payment_intent,
+      stripeSessionId: session.id,
+
+      paymentStatus: session.payment_status,
+      paidAt: new Date(event.created * 1000),
+    };
+
+    console.log(paymentPayload);
+
+    await payments.insertOne(paymentPayload); //add payment data
+
+    if (
+      event.type === "checkout.session.completed" &&
+      event.data.object.payment_status === "paid"
+    ) {
       await bookings.updateOne(
         { _id: new ObjectId(session.metadata?.bookingId) },
         {
           $set: {
-            paymentStatus: "paid",
+            paymentStatus: session.payment_status,
           },
         },
       ); // update the payment status
-
-      const getBooking = await bookings.findOne({
-        _id: new ObjectId(session.metadata.bookingId),
-      });
-
-      const paymentPayload = {
-        bookingId: session.metadata.bookingId,
-
-        customerName: session.customer_details?.name ?? getBooking.customerName,
-        customerEmail:
-          session.customer_details?.email ?? getBooking.customerEmail,
-
-        technicianEmail:
-          session.metadata.technicianEmail ?? getBooking.technicianEmail,
-
-        amount: session.amount_total / 100,
-        currency: session.currency,
-
-        transactionId: session.payment_intent,
-        stripeSessionId: session.id,
-
-        paymentStatus: session.payment_status,
-        paidAt: new Date(event.created * 1000),
-      };
-
-      console.log(paymentPayload);
-
-      await payments.insertOne(paymentPayload); //add payment data
     } else if (event.type === "payment_intent.payment_failed") {
       console.log("Payment failed:", event.data.object);
     }
@@ -148,8 +150,8 @@ app.post("/create-payment-intent", async (req, res) => {
       },
     ],
     mode: "payment",
-    customer_email:bookingService.customerEmail,
-    customerName:bookingService.customerName
+    customer_email: bookingService.customerEmail,
+    // customerName: bookingService.customerName,
   });
 
   // console.log("session", session);
@@ -767,6 +769,27 @@ app.get("/get-bookings-by-admin", async (req, res) => {
     });
   }
 });
+
+
+
+
+// customer api here 
+
+app.get('/get-payment/:customerEmail', async (req,res ) => {
+  const email = req.params.customerEmail
+
+  const query = {customerEmail:email}
+
+  result = await payments.find(query).toArray();
+
+   res.status(200).send({
+      status: 200,
+      success: true,
+      message: "successfully retrive bookings",
+      result,
+    });
+}
+)
 
 export default app;
 
