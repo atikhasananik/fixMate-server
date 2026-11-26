@@ -16,7 +16,15 @@ export const config = {
 
 app.use(cors());
 
-const client = new MongoClient(process.env.MONGODB_URI);
+// Serverless-safe options: one connection per function instance (the client is
+// reused across requests), with bounded timeouts so a cold start cannot hang
+// for the driver's 30s default. On Vercel many instances each had the default
+// 100-connection pool, which could exhaust the shared Atlas cluster.
+const client = new MongoClient(process.env.MONGODB_URI, {
+  maxPoolSize: 1,
+  serverSelectionTimeoutMS: 10000,
+  connectTimeoutMS: 10000,
+});
 
 export async function connectToMongoDB() {
   try {
@@ -24,7 +32,10 @@ export async function connectToMongoDB() {
     console.log("You successfully connected to MongoDB!");
     return client;
   } catch (err) {
-    console.dir(err);
+    console.error("MongoDB connection failed:", err);
+    // Fail fast: a client whose topology closed can never reconnect, so the
+    // instance must fail instead of running routes against a dead client.
+    throw err;
   }
 }
 
